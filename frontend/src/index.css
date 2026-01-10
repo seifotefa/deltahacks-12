@@ -1,5 +1,21 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
+/* Canela Italic Font - Add your Adobe Fonts link here or use @font-face for local files */
+/* Example Adobe Fonts: @import url('https://use.typekit.net/YOUR_KIT_ID.css'); */
+/* For local files, add @font-face declarations below */
+
+@font-face {
+  font-family: 'Canela';
+  font-style: italic;
+  font-weight: 400;
+  src: local('Canela Italic'), local('Canela-Italic');
+  /* If you have font files, uncomment and add paths:
+  src: url('/fonts/Canela-Italic.woff2') format('woff2'),
+       url('/fonts/Canela-Italic.woff') format('woff');
+  */
+  font-display: swap;
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -62,6 +78,20 @@
     font-size: 28px;
     line-height: 1.3;
     letter-spacing: -0.02em;
+  }
+
+  h1.canela-italic {
+    font-family: 'Canela', 'Canela Text', 'Canela Italic', 'Playfair Display', serif !important;
+    font-style: italic !important;
+    font-weight: 400 !important;
+    letter-spacing: 0.02em !important;
+  }
+
+  .canela-italic-bold {
+    font-family: 'Canela', 'Canela Text', 'Canela Italic', 'Playfair Display', serif !important;
+    font-style: italic !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.02em !important;
   }
 
   @media (min-width: 768px) {
@@ -217,5 +247,44 @@
     outline: none;
     border-color: var(--accent);
     box-shadow: 0 0 0 3px var(--focus);
+  }
+
+  @keyframes logoFloat {
+    0%, 100% {
+      transform: translateY(0px);
+    }
+    50% {
+      transform: translateY(-6px);
+    }
+  }
+
+  .logo-float {
+    animation: logoFloat 3s ease-in-out infinite;
+  }
+
+  .canela-italic {
+    font-family: 'Canela', 'Canela Text', 'Canela Italic', 'Playfair Display', serif !important;
+    font-style: italic !important;
+    font-weight: 400 !important;
+    letter-spacing: 0.02em !important;
+    font-feature-settings: 'liga' 1, 'kern' 1;
+  }
+
+  .btn-primary-cyan {
+    background: #06b6d4;
+    color: white;
+    border: none;
+    border-radius: 10px;
+    padding: 12px 20px;
+    font-weight: 500;
+    font-size: 15px;
+    height: 44px;
+    transition: all 0.2s ease;
+    cursor: pointer;
+  }
+
+  .btn-primary-cyan:hover {
+    background: #0891b2;
+    text-decoration: none;
   }
 }
