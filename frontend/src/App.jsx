@@ -201,110 +201,132 @@ function App() {
       // Generate report ID
       const reportId = Math.floor(100 + Math.random() * 900)
 
-      // Get backend analysis
+      // Get backend analysis (new comprehensive format from Gemini)
       const analysis = backendResult.analysis || {}
-      const { heartRate, breathingRate, focus } = vitalsData
+      console.log('Full Gemini analysis:', analysis)
 
-      // Combine vitals-based actions with visual analysis
-      const actions = []
+      // Extract data from new response structure
+      const imageAnalysis = analysis.image_analysis || {}
+      const simulatedVitals = analysis.simulated_vitals || {}
+      const healthGuidance = analysis.health_guidance || {}
+      const erSummary = analysis.er_summary || {}
+      const incidentReportData = analysis.incident_report || {}
+
+      // Build actions from health guidance
+      const actions = [
+        ...(healthGuidance.immediate_actions || []),
+      ]
+      
+      // Add "do not" items as warnings
+      const doNotActions = healthGuidance.do_not || []
+
+      // Build diagnosis/summary
       let diagnosis = ''
-
-      // Actions based on vitals
-      if ((heartRate > 100) && (breathingRate > 20)) {
-        actions.push('Elevate legs (Shock protocol)')
-        actions.push('Keep patient warm')
-        diagnosis += 'Possible shock detected. '
+      if (erSummary.chief_complaint) {
+        diagnosis += `Chief complaint: ${erSummary.chief_complaint}. `
       }
-
-      if (heartRate > 100) {
-        actions.push('Monitor heart rate continuously')
-        diagnosis += 'Tachycardia present. '
+      if (erSummary.vital_summary) {
+        diagnosis += `${erSummary.vital_summary}. `
       }
-
-      if (breathingRate > 20) {
-        actions.push('Ensure airway is clear')
-        diagnosis += 'Hyperventilation noted. '
-      }
-
-      if (focus < 30) {
-        actions.push('Maintain airway positioning')
-        actions.push('Check for responsiveness')
-        diagnosis += 'Patient shows signs of decreased consciousness. '
-      }
-
-      // Actions based on visual analysis (from Gemini)
-      if (analysis.bleeding_level && analysis.bleeding_level !== 'none') {
-        const bleedingActions = {
-          mild: 'Apply direct pressure to wound',
-          moderate: 'Apply pressure and elevate if possible',
-          severe: 'Apply direct pressure, call emergency services immediately'
-        }
-        actions.push(bleedingActions[analysis.bleeding_level] || 'Monitor for bleeding')
-      }
-
-      if (analysis.urgency_level === 'critical' || analysis.urgency_level === 'high') {
-        actions.push('Immediate medical attention required')
-        actions.push('Do not move patient if spinal injury suspected')
-      }
-
-      // Default actions
-      if (actions.length === 0) {
-        actions.push('Continue monitoring vital signs')
-        actions.push('Ensure patient comfort')
-      } else {
-        actions.push('Apply pressure to any visible wounds')
-        actions.push('Do not move patient if spinal injury suspected')
-      }
-
-      // Combine diagnosis
-      if (analysis.notes) {
-        diagnosis += analysis.notes + ' '
+      if (healthGuidance.additional_notes) {
+        diagnosis += healthGuidance.additional_notes
       }
       if (!diagnosis.trim()) {
-        diagnosis = 'Vitals within normal range. Continue monitoring.'
+        diagnosis = 'Analysis complete. Follow guidance above.'
       }
+
+      // Determine urgency level
+      let urgency = 'medium'
+      const triageLevel = erSummary.triage_level?.toLowerCase() || ''
+      if (triageLevel.includes('critical')) urgency = 'critical'
+      else if (triageLevel.includes('urgent')) urgency = 'high'
+      else if (triageLevel.includes('non-urgent')) urgency = 'low'
 
       // Visual analysis from backend
       const visuals = {
-        injury: analysis.injury_types?.length > 0 
-          ? `Detected injuries: ${analysis.injury_types.join(', ')}` 
-          : 'No obvious external injuries visible.',
-        bleeding: analysis.bleeding_level 
-          ? `Bleeding level: ${analysis.bleeding_level}` 
-          : 'No active bleeding detected',
-        position: analysis.body_position || 'Position not determined',
-        confidence: analysis.confidence ? `Confidence: ${Math.round(analysis.confidence * 100)}%` : ''
+        injuries: imageAnalysis.visible_injuries || [],
+        position: imageAnalysis.body_position || 'Not determined',
+        distressLevel: imageAnalysis.distress_level || 'Unknown',
+        environmentalRisks: imageAnalysis.environmental_risks || []
       }
 
-      // Generate the report
+      // Simulated vitals from Gemini
+      const geminiVitals = {
+        heartRate: simulatedVitals.heart_rate_bpm || 'N/A',
+        respiratoryRate: simulatedVitals.respiratory_rate_bpm || 'N/A',
+        oxygenSaturation: simulatedVitals.oxygen_saturation_percent || 'N/A',
+        bloodLoss: simulatedVitals.estimated_blood_loss || 'none',
+        stressLevel: simulatedVitals.stress_level || 'Unknown',
+        shockRisk: simulatedVitals.shock_risk || 'Unknown'
+      }
+
+      // Generate the comprehensive report
       const report = {
         reportId: reportId,
         timestamp: new Date().toLocaleString(),
-        vitals: {
-          heartRate: heartRate,
-          breathingRate: breathingRate,
-          focus: focus
-        },
-        visuals: visuals,
+        
+        // Image analysis
+        imageAnalysis: visuals,
+        
+        // Simulated vitals from Gemini
+        simulatedVitals: geminiVitals,
+        
+        // Frontend collected vitals (from Presage simulation)
+        presageVitals: vitalsData,
+        
+        // Health guidance
         actions: actions,
+        doNotActions: doNotActions,
+        callEmergency: healthGuidance.call_emergency_services || false,
+        
+        // ER Summary
+        erSummary: {
+          chiefComplaint: erSummary.chief_complaint || '',
+          suspectedInjuries: erSummary.suspected_injuries || [],
+          vitalSummary: erSummary.vital_summary || '',
+          triageLevel: erSummary.triage_level || 'Unknown'
+        },
+        
+        // Incident report
+        incidentReport: {
+          type: incidentReportData.incident_type || '',
+          summary: incidentReportData.summary || '',
+          location: incidentReportData.location || 'Not specified',
+          time: incidentReportData.time || new Date().toLocaleString(),
+          followUp: incidentReportData.recommended_follow_up || ''
+        },
+        
         diagnosis: diagnosis.trim(),
-        urgency: analysis.urgency_level || 'medium',
-        backendAnalysis: analysis // Include full backend analysis
+        urgency: urgency,
+        disclaimer: analysis.disclaimer || 'All vitals are simulated for demonstration purposes.',
+        
+        // Keep full backend analysis for debugging
+        fullAnalysis: analysis
       }
 
       setProcessingStatus('')
       setIsProcessing(false)
       setIncidentReport(report)
-      console.log('✓ Report generated successfully')
+      console.log('✓ Report generated successfully:', report)
 
       // Generate and speak audio instructions using Web Speech API
       if ('speechSynthesis' in window) {
-        const urgencyNote = analysis.urgency_level === 'critical' 
+        const urgencyNote = urgency === 'critical' 
           ? 'CRITICAL: Immediate medical attention required. ' 
-          : analysis.urgency_level === 'high' 
+          : urgency === 'high' 
           ? 'HIGH PRIORITY: Urgent medical attention needed. ' 
           : ''
-        const audioScript = urgencyNote + actions.join('. ') + '. ' + diagnosis
+        
+        // Build speech script
+        let audioScript = urgencyNote
+        if (healthGuidance.call_emergency_services) {
+          audioScript += 'Call emergency services immediately. '
+        }
+        audioScript += actions.slice(0, 3).join('. ') + '. '
+        if (erSummary.chief_complaint) {
+          audioScript += erSummary.chief_complaint + '. '
+        }
+        
         const utterance = new SpeechSynthesisUtterance(audioScript)
         utterance.rate = 0.9
         utterance.pitch = 1
