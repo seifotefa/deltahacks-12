@@ -119,7 +119,7 @@ console.log(result);
 ## How It Works
 
 1. Accepts video file upload (MP4/WebM)
-2. Extracts 4 frames at timestamps: 0s, 3s, 6s, 9s
+2. Extracts 10 frames at timestamps: 0s, 1s, 2s, 3s, 4s, 5s, 6s, 7s, 8s, 9s
 3. Sends all frames to Gemini Vision API in a single multi-image request
 4. Parses the JSON response with injury analysis
 5. Returns structured analysis data
