@@ -2,7 +2,13 @@ import { useRef, useEffect, useState } from 'react'
 
 const CameraScanner = ({ onScanComplete, onScanProgress, progress }) => {
   const videoRef = useRef(null)
-  const canvasRef = useRef(null)
+  const mediaRecorderRef = useRef(null)
+  const recordedChunksRef = useRef([])
+  const streamRef = useRef(null)
+  const vitalsRef = useRef({ heartRate: 0, breathingRate: 0, focus: 0 })
+  const hasStoppedRef = useRef(false)
+  const timerRef = useRef(null)
+  const processingTriggeredRef = useRef(false)
   const [stream, setStream] = useState(null)
   const [isProcessing, setIsProcessing] = useState(false)
   const [scanTime, setScanTime] = useState(0)
@@ -12,40 +18,183 @@ const CameraScanner = ({ onScanComplete, onScanProgress, progress }) => {
     focus: 0
   })
 
+  // Keep refs in sync with state
   useEffect(() => {
+    streamRef.current = stream
+  }, [stream])
+
+  useEffect(() => {
+    vitalsRef.current = vitals
+  }, [vitals])
+
+  useEffect(() => {
+    // Reset state when component mounts
+    hasStoppedRef.current = false
+    processingTriggeredRef.current = false
+    setIsProcessing(false)
+    setScanTime(0)
+    recordedChunksRef.current = []
+    
     startCamera()
     return () => {
+      // Clear timer
+      if (timerRef.current) {
+        clearTimeout(timerRef.current)
+        timerRef.current = null
+      }
+      // Stop recording if active
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop()
+      }
+      // Stop camera stream
       if (stream) {
         stream.getTracks().forEach(track => track.stop())
       }
     }
   }, [])
 
+  // Start recording when stream is ready
   useEffect(() => {
-    if (scanTime >= 10 && !isProcessing) {
-      handleScanComplete()
-    } else if (scanTime < 10) {
-      const timer = setTimeout(() => {
-        setScanTime(prev => {
-          const newTime = prev + 0.1
-          onScanProgress((newTime / 10) * 100)
-          
-          // Simulate Presage SDK data collection
-          // In production, this would be actual Presage SDK calls
-          if (newTime > 1) {
-            setVitals({
-              heartRate: Math.floor(70 + Math.random() * 60), // 70-130 BPM
-              breathingRate: Math.floor(12 + Math.random() * 20), // 12-32 breaths/min
-              focus: Math.max(0, Math.min(100, 50 + (Math.random() - 0.5) * 40))
-            })
-          }
-          
-          return newTime
-        })
-      }, 100)
-      return () => clearTimeout(timer)
+    if (stream && !mediaRecorderRef.current && !hasStoppedRef.current) {
+      console.log('=== Stream ready, starting recording ===')
+      console.log('Stream tracks:', stream.getTracks().length)
+      startRecording()
     }
-  }, [scanTime, isProcessing])
+  }, [stream])
+
+  useEffect(() => {
+    // Stop timer and recording when we reach 10 seconds
+    if (scanTime >= 10 && !hasStoppedRef.current) {
+      hasStoppedRef.current = true
+      
+      // Clear any pending timer
+      if (timerRef.current) {
+        clearTimeout(timerRef.current)
+        timerRef.current = null
+      }
+      
+      // Stop recording
+      console.log('=== scanTime >= 10, attempting to stop ===')
+      console.log('mediaRecorderRef.current:', mediaRecorderRef.current ? 'exists' : 'NULL')
+      
+      if (mediaRecorderRef.current) {
+        const recorder = mediaRecorderRef.current
+        console.log('=== Attempting to stop recorder ===')
+        console.log('Current state:', recorder.state)
+        console.log('Has stopped flag:', hasStoppedRef.current)
+        
+        if (recorder.state === 'recording') {
+          console.log('Stopping recording at 10 seconds...')
+          try {
+            // Request final data chunk before stopping
+            recorder.requestData()
+            console.log('Requested final data chunk')
+            
+            // Small delay to ensure data is captured
+            setTimeout(() => {
+              try {
+                recorder.stop()
+                console.log('✓ Stop command sent, new state:', recorder.state)
+              } catch (stopErr) {
+                console.error('✗ Error in stop():', stopErr)
+              }
+            }, 50)
+          } catch (err) {
+            console.error('✗ Error stopping recorder:', err)
+            // Force stop
+            try {
+              if (recorder.state !== 'inactive') {
+                recorder.requestData()
+                setTimeout(() => {
+                  if (recorder.state !== 'inactive') {
+                    console.log('Force stopping recorder')
+                    recorder.stop()
+                  }
+                }, 100)
+              }
+            } catch (forceErr) {
+              console.error('✗ Force stop failed:', forceErr)
+            }
+          }
+        } else if (recorder.state === 'paused') {
+          recorder.requestData()
+          recorder.stop()
+        } else if (recorder.state === 'inactive') {
+          console.warn('⚠ Recorder already inactive')
+        } else {
+          console.warn('⚠ Recorder in unexpected state:', recorder.state)
+        }
+      } else {
+        console.error('✗ MediaRecorder ref is null!')
+      }
+      
+      // Fallback: Force stop after 500ms if still recording
+      setTimeout(() => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+          console.warn('⚠ Force stopping recorder after timeout')
+          try {
+            mediaRecorderRef.current.requestData()
+            mediaRecorderRef.current.stop()
+          } catch (err) {
+            console.error('✗ Force stop error:', err)
+          }
+        }
+        
+        // Fallback: If onstop didn't fire, manually trigger processing
+        setTimeout(() => {
+          if (!processingTriggeredRef.current && recordedChunksRef.current.length > 0) {
+            console.warn('⚠ onstop callback did not fire, manually triggering processing')
+            const mimeType = recordedChunksRef.current[0]?.type || 'video/webm'
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+            const videoFile = new File(
+              recordedChunksRef.current,
+              `recording-${timestamp}.mp4`,  // Always use .mp4 extension
+              { type: mimeType }
+            )
+            if (videoFile.size > 0) {
+              processingTriggeredRef.current = true
+              const currentVitals = vitalsRef.current
+              const finalVitals = {
+                heartRate: currentVitals.heartRate || Math.floor(70 + Math.random() * 60),
+                breathingRate: currentVitals.breathingRate || Math.floor(12 + Math.random() * 20),
+                focus: currentVitals.focus || Math.max(0, Math.min(100, 50 + (Math.random() - 0.5) * 40))
+              }
+              console.log('Manually calling onScanComplete (fallback)')
+              onScanComplete(videoFile, finalVitals)
+            }
+          }
+        }, 1000) // Wait 1 second after stop to see if onstop fires
+      }, 500)
+      
+      // Ensure progress is at 100% (use setTimeout to avoid setState during render)
+      setTimeout(() => onScanProgress(100), 0)
+    } else if (scanTime < 10 && !hasStoppedRef.current) {
+      timerRef.current = setTimeout(() => {
+        const newTime = scanTime + 0.1
+        setScanTime(newTime)
+        
+        // Update progress (use setTimeout to avoid setState during render)
+        setTimeout(() => onScanProgress((newTime / 10) * 100), 0)
+        
+        // Simulate Presage SDK data collection
+        // In production, this would be actual Presage SDK calls
+        if (newTime > 1) {
+          setVitals({
+            heartRate: Math.floor(70 + Math.random() * 60), // 70-130 BPM
+            breathingRate: Math.floor(12 + Math.random() * 20), // 12-32 breaths/min
+            focus: Math.max(0, Math.min(100, 50 + (Math.random() - 0.5) * 40))
+          })
+        }
+      }, 100)
+      
+      return () => {
+        if (timerRef.current) {
+          clearTimeout(timerRef.current)
+          timerRef.current = null
+        }
+      }
+    }
+  }, [scanTime, isProcessing, onScanProgress])
 
   const startCamera = async () => {
     try {
@@ -66,36 +215,164 @@ const CameraScanner = ({ onScanComplete, onScanProgress, progress }) => {
     }
   }
 
-  const handleScanComplete = async () => {
-    setIsProcessing(true)
+  const startRecording = () => {
+    const currentStream = stream
+    if (!currentStream) {
+      console.error('✗ Cannot start recording: stream is null')
+      return
+    }
     
-    // Capture frame
-    const canvas = canvasRef.current
-    const video = videoRef.current
+    if (mediaRecorderRef.current) {
+      console.log('⚠ Recording already started, skipping')
+      return
+    }
+
+    console.log('=== startRecording called ===')
+    console.log('Stream:', currentStream)
+    console.log('Stream active:', currentStream.active)
+    console.log('Video tracks:', currentStream.getVideoTracks().length)
     
-    if (canvas && video) {
-      canvas.width = video.videoWidth
-      canvas.height = video.videoHeight
-      const ctx = canvas.getContext('2d')
-      ctx.drawImage(video, 0, 0)
-      
-      canvas.toBlob(async (blob) => {
-        // Stop camera stream
-        if (stream) {
-          stream.getTracks().forEach(track => track.stop())
+    recordedChunksRef.current = []
+    
+    // Try MP4 first, then fallback to WebM
+    const options = { mimeType: 'video/mp4' }
+    if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+      console.log('MP4 not supported, trying WebM codecs...')
+      options.mimeType = 'video/webm;codecs=vp9'
+      if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+        options.mimeType = 'video/webm;codecs=vp8'
+        if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+          options.mimeType = 'video/webm'
+        }
+      }
+    }
+    
+    console.log('Recording with MIME type:', options.mimeType)
+
+    try {
+      const mediaRecorder = new MediaRecorder(currentStream, options)
+      mediaRecorderRef.current = mediaRecorder
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data) {
+          if (event.data.size > 0) {
+            console.log('Received video chunk:', event.data.size, 'bytes')
+            recordedChunksRef.current.push(event.data)
+          } else {
+            console.warn('Empty data chunk received (size: 0)')
+          }
+        } else {
+          console.warn('No data in event')
+        }
+      }
+
+      mediaRecorder.onstop = () => {
+        console.log('=== MediaRecorder.onstop CALLED ===')
+        console.log('MediaRecorder state:', mediaRecorder.state)
+        console.log('Total chunks:', recordedChunksRef.current.length)
+        const totalSize = recordedChunksRef.current.reduce((sum, chunk) => sum + chunk.size, 0)
+        console.log('Total size:', totalSize, 'bytes')
+        
+        // Mark that processing has been triggered
+        processingTriggeredRef.current = true
+        
+        // Small delay to ensure all data is available
+        setTimeout(() => {
+          setIsProcessing(true)
+          
+          // Check if we have any chunks
+          if (recordedChunksRef.current.length === 0) {
+            console.error('✗ No video chunks recorded!')
+            setIsProcessing(false)
+            alert('Recording failed: No video data captured. Please try again.')
+            return
+          }
+          
+        // Get MIME type from recorded chunks
+        const mimeType = recordedChunksRef.current[0]?.type || 'video/webm'
+        
+        // Always save as .mp4 extension for easier tracking
+        // (Backend can handle WebM format even with .mp4 extension)
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+        const videoFile = new File(
+          recordedChunksRef.current,  // Directly use chunks array
+          `recording-${timestamp}.mp4`,  // Always use .mp4 extension
+          { type: mimeType }  // Keep original MIME type (webm or mp4)
+        )
+        
+        console.log('Video file created:', {
+          name: videoFile.name,
+          size: videoFile.size,
+          type: videoFile.type,
+          chunks: recordedChunksRef.current.length
+        })
+        
+        if (videoFile.size === 0) {
+          console.error('✗ Video file is empty!')
+          setIsProcessing(false)
+          alert('Recording failed: Video file is empty. Please try again.')
+          return
         }
         
-        // Final vitals reading
+        // Get final vitals from ref (current state)
+        const currentVitals = vitalsRef.current
         const finalVitals = {
-          heartRate: vitals.heartRate || Math.floor(70 + Math.random() * 60),
-          breathingRate: vitals.breathingRate || Math.floor(12 + Math.random() * 20),
-          focus: vitals.focus || Math.max(0, Math.min(100, 50 + (Math.random() - 0.5) * 40))
+          heartRate: currentVitals.heartRate || Math.floor(70 + Math.random() * 60),
+          breathingRate: currentVitals.breathingRate || Math.floor(12 + Math.random() * 20),
+          focus: currentVitals.focus || Math.max(0, Math.min(100, 50 + (Math.random() - 0.5) * 40))
         }
         
-        onScanComplete(blob, finalVitals)
-      }, 'image/jpeg', 0.95)
+        console.log('Calling onScanComplete with:', {
+          videoFile: videoFile.name,
+          videoSize: videoFile.size,
+          videoType: videoFile.type,
+          vitals: finalVitals
+        })
+        
+        // Stop camera stream
+        const currentStream = streamRef.current
+        if (currentStream) {
+          currentStream.getTracks().forEach(track => track.stop())
+        }
+        
+        // Pass video file to parent component
+        try {
+          console.log('✓ Calling onScanComplete callback...')
+          onScanComplete(videoFile, finalVitals)
+          console.log('✓ onScanComplete callback executed')
+        } catch (err) {
+          console.error('✗ Error calling onScanComplete:', err)
+          setIsProcessing(false)
+          alert(`Error processing video: ${err.message}`)
+        }
+        }, 100) // Small delay to ensure all data is flushed
+      }
+
+      mediaRecorder.onerror = (event) => {
+        console.error('MediaRecorder error:', event.error)
+        setIsProcessing(false)
+      }
+
+      // Start recording
+      console.log('=== Starting MediaRecorder ===')
+      console.log('Options:', options)
+      console.log('Stream tracks:', currentStream.getTracks().length)
+      
+      try {
+        mediaRecorder.start(100) // Collect data every 100ms
+        console.log('✓ MediaRecorder started, state:', mediaRecorder.state)
+      } catch (startErr) {
+        console.error('✗ Error starting MediaRecorder:', startErr)
+        alert('Failed to start recording. Please try again.')
+      }
+    } catch (err) {
+      console.error('Error starting MediaRecorder:', err)
+      alert('Failed to start video recording. Please try again.')
     }
   }
+
+  // Note: handleScanComplete is now handled by MediaRecorder.onstop
+  // This function is kept for compatibility but recording happens automatically
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -156,7 +433,6 @@ const CameraScanner = ({ onScanComplete, onScanProgress, progress }) => {
               </div>
             </div>
           )}
-          <canvas ref={canvasRef} className="hidden" />
         </div>
 
         {/* Live Vitals Display */}
