@@ -50,7 +50,8 @@ if (!GEMINI_API_KEY) {
 }
 
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro-vision' });
+// Use gemini-2.0-flash for vision analysis
+const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
 // Setup temp directories
 const TEMP_DIR = path.join(__dirname, 'tmp');
@@ -107,7 +108,7 @@ async function extractFrames(videoPath, outputDir) {
   // Ensure output directory exists
   await fs.mkdir(outputDir, { recursive: true });
 
-  const timestamps = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]; // seconds - 10 frames for 10-second video
+  const timestamps = [0, 3, 6, 9]; // seconds - 4 frames (reduced to save API tokens)
   const framePaths = [];
   const errors = [];
 
@@ -188,13 +189,96 @@ async function imageToBase64(imagePath) {
 
 // Analyze frames with Gemini
 async function analyzeFrames(framePaths) {
-  const prompt = `Analyze these frames for visible injuries, blood loss, and body position. Return JSON with:
-injury_types (string[]),
-bleeding_level (none|mild|moderate|severe),
-body_position (string),
-urgency_level (low|medium|high|critical),
-notes (string),
-confidence (0-1).`;
+  const prompt = `You are a medical triage and incident analysis AI.
+
+You will be given:
+1) One or more images of a person involved in a medical or emergency scenario
+2) Optional contextual data (time, location, short description)
+
+Your tasks:
+
+1. IMAGE ANALYSIS
+Analyze the image(s) and identify:
+- Visible injuries (cuts, swelling, bruising, bleeding, burns, abnormal posture)
+- Body position (standing, sitting, lying, collapsed)
+- Apparent distress level (low / moderate / severe)
+- Environmental risk factors (traffic, fire, sharp objects, unsafe surroundings)
+
+2. SIMULATED VITAL SIGNS (DEMO / NON-MEDICAL)
+Generate **realistic but clearly simulated vitals** inspired by Presage-style physiological outputs.
+These values are **NOT real measurements** and are for demonstration only.
+
+Generate:
+- Heart Rate (bpm)
+- Respiratory Rate (breaths/min)
+- Blood Oxygen Saturation (%)
+- Estimated Blood Loss (none / mild / moderate / severe)
+- Stress Level (low / moderate / high)
+- Shock Risk (low / moderate / high)
+
+3. HEALTH & FIRST-AID GUIDANCE
+Provide:
+- Immediate first-aid advice appropriate for a non-professional
+- Clear do's and don'ts
+- Whether emergency services should be contacted immediately
+- Advice must be calm, supportive, and non-alarming
+
+4. ER TRIAGE SUMMARY
+Create a short **Emergency Room handoff summary** suitable for paramedics or ER staff:
+- Chief complaint
+- Suspected injuries
+- Vital sign summary
+- Urgency level (Non-urgent / Urgent / Critical)
+
+5. INCIDENT REPORT
+Generate a structured incident report that could be shared with emergency services or workplace safety teams.
+
+OUTPUT FORMAT:
+Return ONLY valid JSON in the following structure:
+
+{
+  "image_analysis": {
+    "visible_injuries": [],
+    "body_position": "",
+    "distress_level": "",
+    "environmental_risks": []
+  },
+  "simulated_vitals": {
+    "heart_rate_bpm": "",
+    "respiratory_rate_bpm": "",
+    "oxygen_saturation_percent": "",
+    "estimated_blood_loss": "",
+    "stress_level": "",
+    "shock_risk": ""
+  },
+  "health_guidance": {
+    "immediate_actions": [],
+    "do_not": [],
+    "call_emergency_services": true,
+    "additional_notes": ""
+  },
+  "er_summary": {
+    "chief_complaint": "",
+    "suspected_injuries": [],
+    "vital_summary": "",
+    "triage_level": ""
+  },
+  "incident_report": {
+    "incident_type": "",
+    "summary": "",
+    "location": "",
+    "time": "",
+    "recommended_follow_up": ""
+  },
+  "disclaimer": "All vitals are simulated for demonstration purposes and are not medical measurements."
+}
+
+IMPORTANT RULES:
+- Do NOT provide diagnoses
+- Do NOT claim medical certainty
+- Always clarify vitals are simulated
+- Prioritize user safety and emergency escalation when appropriate
+- Return ONLY the JSON object, no additional text`;
 
   // Prepare image parts
   const imageParts = [];
