@@ -99,31 +99,44 @@ const CameraScanner = ({ onScanComplete, onScanProgress, progress }) => {
 
   return (
     <div className="max-w-4xl mx-auto">
-      <div className="bg-white/10 backdrop-blur-md rounded-2xl p-6 shadow-2xl border border-white/20">
-        <div className="text-center mb-6">
-          <h2 className="text-3xl font-bold mb-2">🔬 Scanning Vitals...</h2>
-          <p className="text-gray-300">Keep the camera steady on the patient</p>
+      <div className="panel p-8 hover:bg-surface-2 transition-colors">
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center gap-3 mb-4">
+            <svg className="w-7 h-7 text-text" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+            </svg>
+            <h2 className="text-2xl font-semibold tracking-tight text-text">Scanning Vitals...</h2>
+          </div>
+          <p className="text-text-muted mb-3">Keep the camera steady on the patient</p>
+          <div className="flex items-center justify-center gap-2 mt-3">
+            <span className="text-sm text-text-dim">Collecting biometric data</span>
+          </div>
         </div>
 
         {/* Progress Bar */}
-        <div className="mb-6">
-          <div className="flex justify-between items-center mb-2">
-            <span className="text-sm font-medium text-gray-300">Progress</span>
-            <span className="text-sm font-bold text-white">{Math.round(progress)}%</span>
+        <div className="mb-6 bg-surface-2 rounded-xl p-5 border border-border">
+          <div className="flex justify-between items-center mb-4">
+            <span className="text-sm font-medium text-text flex items-center gap-2">
+              <svg className="w-4 h-4 text-text" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+              Scan Progress
+            </span>
+            <span className="text-lg font-semibold text-text">{Math.round(progress)}%</span>
           </div>
-          <div className="w-full bg-gray-700 rounded-full h-4 overflow-hidden">
+          <div className="w-full bg-surface-3 rounded-full h-2 overflow-hidden border border-border">
             <div
-              className="bg-gradient-to-r from-blue-500 to-green-500 h-4 rounded-full transition-all duration-100 ease-linear"
+              className="bg-accent h-2 rounded-full transition-all duration-100 ease-linear"
               style={{ width: `${progress}%` }}
             />
           </div>
-          <div className="text-center mt-2 text-gray-400 text-sm">
-            {scanTime.toFixed(1)}s / 10.0s
+          <div className="text-center mt-4 text-text-dim text-sm">
+            {scanTime.toFixed(1)}s / 10.0s remaining
           </div>
         </div>
 
         {/* Camera Preview */}
-        <div className="relative rounded-xl overflow-hidden mb-6 bg-black">
+        <div className="relative rounded-2xl overflow-hidden mb-6 bg-surface-3 border border-border">
           <video
             ref={videoRef}
             autoPlay
@@ -132,9 +145,14 @@ const CameraScanner = ({ onScanComplete, onScanProgress, progress }) => {
             className="w-full h-auto max-h-96 object-cover"
           />
           {scanTime < 10 && (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="bg-red-500/20 backdrop-blur-sm rounded-full p-8 animate-pulse">
-                <div className="w-24 h-24 border-4 border-red-500 rounded-full" />
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="relative">
+                <div className="w-24 h-24 border-2 border-accent rounded-full animate-pulse"></div>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <svg className="w-12 h-12 text-accent" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                  </svg>
+                </div>
               </div>
             </div>
           )}
@@ -144,25 +162,54 @@ const CameraScanner = ({ onScanComplete, onScanProgress, progress }) => {
         {/* Live Vitals Display */}
         {scanTime > 1 && (
           <div className="grid grid-cols-3 gap-4 mb-4">
-            <div className="bg-red-500/20 rounded-lg p-4 border border-red-500/30">
-              <div className="text-sm text-gray-300 mb-1">Heart Rate</div>
-              <div className="text-2xl font-bold text-red-400">{vitals.heartRate} BPM</div>
+            <div className="panel p-5 hover:bg-surface-2 transition-colors">
+              <div className="flex items-center gap-2 mb-3">
+                <svg className="w-4 h-4 text-danger" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                </svg>
+                <div className="text-xs font-medium text-text-dim uppercase tracking-wide">Heart Rate</div>
+              </div>
+              <div className="text-3xl font-semibold mb-1 text-danger tracking-tight">
+                {vitals.heartRate}
+              </div>
+              <div className="text-xs text-text-dim">BPM</div>
             </div>
-            <div className="bg-yellow-500/20 rounded-lg p-4 border border-yellow-500/30">
-              <div className="text-sm text-gray-300 mb-1">Breathing Rate</div>
-              <div className="text-2xl font-bold text-yellow-400">{vitals.breathingRate}/min</div>
+            <div className="panel p-5 hover:bg-surface-2 transition-colors">
+              <div className="flex items-center gap-2 mb-3">
+                <svg className="w-4 h-4 text-text" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+                <div className="text-xs font-medium text-text-dim uppercase tracking-wide">Respiration</div>
+              </div>
+              <div className="text-3xl font-semibold mb-1 text-text tracking-tight">
+                {vitals.breathingRate}
+              </div>
+              <div className="text-xs text-text-dim">/min</div>
             </div>
-            <div className="bg-blue-500/20 rounded-lg p-4 border border-blue-500/30">
-              <div className="text-sm text-gray-300 mb-1">Focus Score</div>
-              <div className="text-2xl font-bold text-blue-400">{Math.round(vitals.focus)}%</div>
+            <div className="panel p-5 hover:bg-surface-2 transition-colors">
+              <div className="flex items-center gap-2 mb-3">
+                <svg className="w-4 h-4 text-success" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <div className="text-xs font-medium text-text-dim uppercase tracking-wide">Focus</div>
+              </div>
+              <div className="text-3xl font-semibold mb-1 text-success tracking-tight">
+                {Math.round(vitals.focus)}
+              </div>
+              <div className="text-xs text-text-dim">%</div>
             </div>
           </div>
         )}
 
         {isProcessing && (
-          <div className="text-center py-4">
-            <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
-            <p className="mt-2 text-gray-300">Processing incident report...</p>
+          <div className="text-center py-8 bg-surface-2 rounded-xl border border-border">
+            <div className="inline-flex items-center gap-3">
+              <svg className="animate-spin h-6 w-6 text-text" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              <p className="text-text-muted">Processing incident report...</p>
+            </div>
           </div>
         )}
       </div>
