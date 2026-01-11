@@ -175,16 +175,16 @@ const CameraScanner = ({ onScanComplete, onScanProgress, progress }) => {
         
         // Update progress (use setTimeout to avoid setState during render)
         setTimeout(() => onScanProgress((newTime / 10) * 100), 0)
-        
-        // Simulate Presage SDK data collection
-        // In production, this would be actual Presage SDK calls
-        if (newTime > 1) {
-          setVitals({
-            heartRate: Math.floor(70 + Math.random() * 60), // 70-130 BPM
-            breathingRate: Math.floor(12 + Math.random() * 20), // 12-32 breaths/min
-            focus: Math.max(0, Math.min(100, 50 + (Math.random() - 0.5) * 40))
-          })
-        }
+          
+          // Simulate Presage SDK data collection
+          // In production, this would be actual Presage SDK calls
+          if (newTime > 1) {
+            setVitals({
+              heartRate: Math.floor(70 + Math.random() * 60), // 70-130 BPM
+              breathingRate: Math.floor(12 + Math.random() * 20), // 12-32 breaths/min
+              focus: Math.max(0, Math.min(100, 50 + (Math.random() - 0.5) * 40))
+            })
+          }
       }, 100)
       
       return () => {

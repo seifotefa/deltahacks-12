@@ -41,9 +41,57 @@ function App() {
   const [presageData, setPresageData] = useState(null)
   const [isProcessing, setIsProcessing] = useState(false)
   const [processingStatus, setProcessingStatus] = useState('')
+  const [processingProgress, setProcessingProgress] = useState(0)
   const [recordedVideoUrl, setRecordedVideoUrl] = useState(null)
   const [showHowItWorks, setShowHowItWorks] = useState(false)
   const [isButtonAnimating, setIsButtonAnimating] = useState(false)
+  
+  // Ref to track auto-playing audio so it can be stopped
+  const autoAudioRef = useRef(null)
+  const progressIntervalRef = useRef(null)
+  
+  // Slow progress bar animation while processing
+  useEffect(() => {
+    if (isProcessing) {
+      // Start from 0 and slowly increment
+      setProcessingProgress(0)
+      progressIntervalRef.current = setInterval(() => {
+        setProcessingProgress(prev => {
+          // Slow down as we approach 90% (never reach 100% until done)
+          if (prev < 30) return prev + 2
+          if (prev < 60) return prev + 1
+          if (prev < 85) return prev + 0.5
+          if (prev < 95) return prev + 0.2
+          return prev // Stop at 95%, wait for completion
+        })
+      }, 200) // Update every 200ms
+    } else {
+      // Clear interval when not processing
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current)
+        progressIntervalRef.current = null
+      }
+    }
+    
+    return () => {
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current)
+      }
+    }
+  }, [isProcessing])
+  
+  // Function to stop auto-playing audio
+  const stopAutoAudio = () => {
+    if (autoAudioRef.current) {
+      autoAudioRef.current.pause()
+      autoAudioRef.current.currentTime = 0
+      autoAudioRef.current = null
+    }
+    // Also stop Web Speech API if active
+    if ('speechSynthesis' in window) {
+      speechSynthesis.cancel()
+    }
+  }
 
   const handleStartScan = (e) => {
     // Ripple effect
@@ -254,12 +302,50 @@ function App() {
         diagnosis = 'Analysis complete. Follow guidance above.'
       }
 
-      // Determine urgency level
-      let urgency = 'medium'
+      // Determine urgency level based on multiple factors
+      // Be CONSERVATIVE - only escalate when there's clear evidence
+      let urgency = 'low' // Default to low
       const triageLevel = erSummary.triage_level?.toLowerCase() || ''
-      if (triageLevel.includes('critical')) urgency = 'critical'
-      else if (triageLevel.includes('urgent')) urgency = 'high'
-      else if (triageLevel.includes('non-urgent')) urgency = 'low'
+      const distressLevel = imageAnalysis.distress_level?.toLowerCase() || ''
+      const bloodLoss = simulatedVitals.estimated_blood_loss?.toLowerCase() || 'none'
+      const shockRisk = simulatedVitals.shock_risk?.toLowerCase() || 'low'
+      
+      // Check for non-urgent FIRST (contains "urgent" but means low priority)
+      const isNonUrgent = triageLevel.includes('non-urgent') || triageLevel.includes('non urgent')
+      // Only "urgent" without "non" prefix means high priority
+      const isUrgent = triageLevel.includes('urgent') && !isNonUrgent
+      const isCritical = triageLevel.includes('critical')
+      
+      console.log('Urgency factors:', { triageLevel, distressLevel, bloodLoss, shockRisk, isNonUrgent, isUrgent, isCritical })
+      
+      // Critical conditions - explicit critical triage OR severe indicators
+      if (
+        isCritical ||
+        (bloodLoss === 'severe' && shockRisk === 'high') ||
+        (distressLevel === 'severe' && shockRisk === 'high')
+      ) {
+        urgency = 'critical'
+      }
+      // High priority - explicit urgent triage (NOT non-urgent) OR severe single factors
+      else if (
+        isUrgent ||
+        (bloodLoss === 'severe') ||
+        (shockRisk === 'high') ||
+        (distressLevel === 'severe')
+      ) {
+        urgency = 'high'
+      }
+      // Medium - moderate concerns
+      else if (
+        bloodLoss === 'moderate' ||
+        shockRisk === 'moderate' ||
+        distressLevel === 'moderate'
+      ) {
+        urgency = 'medium'
+      }
+      // Low - non-urgent, mild, or no significant concerns (default)
+      
+      console.log('Determined urgency:', urgency)
 
       // Visual analysis from backend
       const visuals = {
@@ -296,7 +382,8 @@ function App() {
         // Health guidance
         actions: actions,
         doNotActions: doNotActions,
-        callEmergency: healthGuidance.call_emergency_services || false,
+        // Only show call emergency for high/critical urgency
+        callEmergency: (urgency === 'critical' || urgency === 'high') && healthGuidance.call_emergency_services,
         
         // ER Summary
         erSummary: {
@@ -323,28 +410,71 @@ function App() {
         fullAnalysis: analysis
       }
 
+      setProcessingProgress(100)
       setProcessingStatus('')
       setIsProcessing(false)
+      setProcessingProgress(0)
       setIncidentReport(report)
       console.log('✓ Report generated successfully:', report)
 
       // Generate and speak audio instructions using ElevenLabs
+      // Build speech script dynamically from Gemini analysis data
       try {
-        const urgencyNote = urgency === 'critical' 
-          ? 'CRITICAL: Immediate medical attention required. ' 
-          : urgency === 'high' 
-          ? 'HIGH PRIORITY: Urgent medical attention needed. ' 
-          : ''
+        let audioScript = ''
         
-        // Build speech script
-        let audioScript = urgencyNote
-        if (healthGuidance.call_emergency_services) {
-          audioScript += 'Call emergency services immediately. '
+        // 1. Urgency prefix based on calculated urgency
+        if (urgency === 'critical') {
+          audioScript += 'Critical situation detected. Immediate medical attention required. '
+        } else if (urgency === 'high') {
+          audioScript += 'Urgent medical attention needed. '
         }
-        audioScript += actions.slice(0, 3).join('. ') + '. '
+        
+        // 2. Emergency services OR investigate based on urgency
+        if (urgency === 'critical' || urgency === 'high') {
+          if (healthGuidance.call_emergency_services === true) {
+            audioScript += 'Call emergency services immediately. '
+          }
+        } else {
+          // Low or medium urgency - don't prompt for emergency, suggest investigation
+          audioScript += 'Please assess the situation carefully. '
+        }
+        
+        // 3. Situation summary from Gemini's ER summary
         if (erSummary.chief_complaint) {
-          audioScript += erSummary.chief_complaint + '. '
+          audioScript += `Assessment: ${erSummary.chief_complaint}. `
         }
+        
+        // 4. Key vitals if concerning (from Gemini simulated vitals)
+        if (simulatedVitals.shock_risk?.toLowerCase() === 'high') {
+          audioScript += 'High shock risk detected. '
+        }
+        if (simulatedVitals.estimated_blood_loss?.toLowerCase() === 'severe') {
+          audioScript += 'Severe blood loss observed. '
+        }
+        
+        // 5. Immediate actions from Gemini (first 3)
+        const immediateActions = healthGuidance.immediate_actions || []
+        if (immediateActions.length > 0) {
+          audioScript += 'Immediate actions: ' + immediateActions.slice(0, 3).join('. ') + '. '
+        }
+        
+        // 6. Critical warnings from Gemini (do not actions)
+        const doNotList = healthGuidance.do_not || []
+        if (doNotList.length > 0 && urgency !== 'low') {
+          audioScript += 'Important: Do not ' + doNotList[0].toLowerCase() + '. '
+        }
+        
+        // 7. Additional notes from Gemini if available
+        if (healthGuidance.additional_notes && urgency !== 'low') {
+          audioScript += healthGuidance.additional_notes + ' '
+        }
+        
+        // Fallback if no data
+        if (!audioScript.trim()) {
+          audioScript = 'Analysis complete. Please review the report for details.'
+        }
+        
+        console.log('Audio script from Gemini data:', audioScript)
         
         console.log('Generating audio with ElevenLabs:', audioScript.substring(0, 100) + '...')
         
@@ -364,8 +494,13 @@ function App() {
           const audioBlob = await audioResponse.blob()
           const audioUrl = URL.createObjectURL(audioBlob)
           
-          // Play audio
+          // Play audio and store ref so it can be stopped
           const audio = new Audio(audioUrl)
+          autoAudioRef.current = audio
+          audio.onended = () => {
+            autoAudioRef.current = null
+            URL.revokeObjectURL(audioUrl)
+          }
           audio.play().catch(err => {
             console.error('Error playing audio:', err)
           })
@@ -378,19 +513,32 @@ function App() {
         console.error('Error generating audio:', audioErr)
         // Fallback to Web Speech API if ElevenLabs fails
         if ('speechSynthesis' in window) {
-          const urgencyNote = urgency === 'critical' 
-            ? 'CRITICAL: Immediate medical attention required. ' 
-            : urgency === 'high' 
-            ? 'HIGH PRIORITY: Urgent medical attention needed. ' 
-            : ''
-          
-          let audioScript = urgencyNote
-          if (healthGuidance.call_emergency_services) {
-            audioScript += 'Call emergency services immediately. '
+          // Build same dynamic script for fallback
+          let fallbackScript = ''
+          if (urgency === 'critical') {
+            fallbackScript += 'Critical situation. '
+          } else if (urgency === 'high') {
+            fallbackScript += 'Urgent attention needed. '
           }
-          audioScript += actions.slice(0, 3).join('. ') + '. '
+          if (urgency === 'critical' || urgency === 'high') {
+            if (healthGuidance.call_emergency_services) {
+              fallbackScript += 'Call emergency services. '
+            }
+          } else {
+            fallbackScript += 'Please assess the situation. '
+          }
+          if (erSummary.chief_complaint) {
+            fallbackScript += erSummary.chief_complaint + '. '
+          }
+          const immediateActions = healthGuidance.immediate_actions || []
+          if (immediateActions.length > 0) {
+            fallbackScript += immediateActions.slice(0, 2).join('. ') + '. '
+          }
+          if (!fallbackScript.trim()) {
+            fallbackScript = 'Analysis complete. Review the report.'
+          }
           
-          const utterance = new SpeechSynthesisUtterance(audioScript)
+          const utterance = new SpeechSynthesisUtterance(fallbackScript)
           utterance.rate = 0.9
           speechSynthesis.speak(utterance)
         }
@@ -399,6 +547,7 @@ function App() {
       console.error('✗ Error sending to backend:', err)
       setProcessingStatus('')
       setIsProcessing(false)
+      setProcessingProgress(0)
       
       // Provide more helpful error messages
       let errorMessage = err.message
@@ -427,6 +576,7 @@ function App() {
     setScanProgress(0)
     setIsProcessing(false)
     setProcessingStatus('')
+    setProcessingProgress(0)
   }
 
   return (
@@ -545,21 +695,49 @@ function App() {
         )}
 
         {isProcessing && (
-          <div className="max-w-2xl mx-auto mt-8 panel p-8">
-            <div className="text-center">
-              <div className="inline-flex items-center gap-3 mb-4">
-                <svg className="animate-spin h-6 w-6 text-text" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                <p className="text-text font-semibold">Processing Video Analysis</p>
+          <div className="fixed inset-0 flex items-center justify-center z-20 bg-white/80 backdrop-blur-sm">
+            <div className="max-w-md w-full mx-4 panel p-8 shadow-xl">
+              <div className="text-center">
+                <div className="inline-flex items-center gap-3 mb-4">
+                  <svg className="animate-spin h-6 w-6 text-cyan-500" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  <p className="text-text font-semibold">Processing Video Analysis</p>
+                </div>
+                
+                {/* Progress Bar - clean and fast */}
+                <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden shadow-inner">
+                  <div 
+                    className="h-full rounded-full relative overflow-hidden"
+                    style={{ 
+                      width: `${processingProgress}%`,
+                      transition: 'width 0.4s ease-out',
+                      background: 'linear-gradient(90deg, #06b6d4, #0891b2, #06b6d4)',
+                      backgroundSize: '200% 100%',
+                      animation: 'shimmer 1s ease-in-out infinite'
+                    }}
+                  >
+                    <div 
+                      className="absolute inset-0 opacity-50"
+                      style={{
+                        background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.5), transparent)',
+                        animation: 'glow-sweep 1s ease-in-out infinite'
+                      }}
+                    />
+                  </div>
+                </div>
+                <style>{`
+                  @keyframes shimmer {
+                    0%, 100% { background-position: 0% 50%; }
+                    50% { background-position: 100% 50%; }
+                  }
+                  @keyframes glow-sweep {
+                    0% { transform: translateX(-100%); }
+                    100% { transform: translateX(200%); }
+                  }
+                `}</style>
               </div>
-              {processingStatus && (
-                <p className="text-text-dim text-sm">{processingStatus}</p>
-              )}
-              <p className="text-text-dim text-xs mt-4">
-                This may take 30-60 seconds...
-              </p>
             </div>
           </div>
         )}
@@ -591,7 +769,7 @@ function App() {
 
         {incidentReport && (
           <div className="mt-8">
-            <IncidentReport report={incidentReport} vitals={presageData} videoUrl={recordedVideoUrl} />
+            <IncidentReport report={incidentReport} vitals={presageData} videoUrl={recordedVideoUrl} onStopAutoAudio={stopAutoAudio} />
             <div className="text-center mt-12">
               <button
                 onClick={handleNewScan}

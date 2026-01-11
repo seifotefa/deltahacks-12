@@ -18,7 +18,7 @@ const GTA_HOSPITALS = [
   { id: 'markham-stouffville', name: 'Markham Stouffville Hospital', city: 'Markham', phone: '905-472-7000' },
 ]
 
-const IncidentReport = ({ report, videoUrl }) => {
+const IncidentReport = ({ report, videoUrl, onStopAutoAudio }) => {
   const [copied, setCopied] = useState(false)
   const [selectedHospital, setSelectedHospital] = useState(GTA_HOSPITALS[0].id)
   const [showHospitalSelect, setShowHospitalSelect] = useState(false)
@@ -306,7 +306,7 @@ ${report.disclaimer || 'All vitals are simulated for demonstration purposes and 
       setAgentStatus('Listening... (speak, then pause when done)')
     } catch (e) {
       console.error('Failed to start recognition:', e)
-    }
+  }
   }
 
   // Handle user's spoken message
@@ -361,6 +361,11 @@ ${report.disclaimer || 'All vitals are simulated for demonstration purposes and 
     }
     
     // Start the agent
+    // Stop any auto-playing audio first
+    if (onStopAutoAudio) {
+      onStopAutoAudio()
+    }
+    
     setIsAgentActive(true)
     setAgentStatus('Connecting to agent...')
     
@@ -390,7 +395,7 @@ ${report.disclaimer || 'All vitals are simulated for demonstration purposes and 
             </h2>
           </div>
           <div className="text-sm text-text-muted">
-            {report.timestamp || new Date().toLocaleString()}
+              {report.timestamp || new Date().toLocaleString()}
           </div>
         </div>
 
@@ -429,7 +434,7 @@ ${report.disclaimer || 'All vitals are simulated for demonstration purposes and 
                 </div>
               )}
             </div>
-          </div>
+              </div>
 
           {/* Column 2: Vitals */}
           <div className="panel p-4 bg-surface-2">
@@ -453,11 +458,11 @@ ${report.disclaimer || 'All vitals are simulated for demonstration purposes and 
               <div className="text-center p-2 bg-surface rounded">
                 <div className={`text-sm font-bold ${simVitals.shockRisk?.toLowerCase() === 'high' ? 'text-red-400' : simVitals.shockRisk?.toLowerCase() === 'moderate' ? 'text-orange-400' : 'text-green-400'}`}>
                   {simVitals.shockRisk || '--'}
-                </div>
-                <div className="text-xs text-text-dim">Shock Risk</div>
               </div>
+                <div className="text-xs text-text-dim">Shock Risk</div>
             </div>
           </div>
+        </div>
 
           {/* Column 3: Actions */}
           <div className="panel p-4 bg-surface-2">
@@ -489,7 +494,7 @@ ${report.disclaimer || 'All vitals are simulated for demonstration purposes and 
             <span className="text-text-dim">Summary: </span>
             <span className="text-text">
               {report.incidentReport?.summary || erSummary.suspectedInjuries?.join(', ') || 'N/A'}
-            </span>
+                  </span>
           </div>
         )}
 

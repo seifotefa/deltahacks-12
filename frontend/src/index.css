@@ -36,9 +36,9 @@
   --text-muted: rgba(17, 24, 39, 0.65);
   --text-dim: rgba(17, 24, 39, 0.45);
 
-  /* Accent (YC-ish but neutral) */
-  --accent: #f97316;
-  --accent-hover: #ea580c;
+  /* Accent (Cyan to match theme) */
+  --accent: #06b6d4;
+  --accent-hover: #0891b2;
   --focus: rgba(249, 115, 22, 0.30);
 
   /* Status */
