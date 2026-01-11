@@ -8,11 +8,18 @@ import './App.css'
 // To change: Create frontend/.env file with: VITE_BACKEND_URL=http://localhost:YOUR_PORT
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000'
 
-// Log backend URL on startup
+// ElevenLabs service endpoint
+// Default: http://localhost:3001
+// To change: Create frontend/.env file with: VITE_ELEVENLABS_URL=http://localhost:YOUR_PORT
+const ELEVENLABS_URL = import.meta.env.VITE_ELEVENLABS_URL || 'http://localhost:3001'
+
+// Log configuration on startup
 console.log('=== Frontend Configuration ===')
-console.log('Backend URL:', BACKEND_URL)
+console.log('Backend URL (Gemini):', BACKEND_URL)
+console.log('ElevenLabs URL:', ELEVENLABS_URL)
 console.log('Expected backend port: 3000')
-console.log('If backend is on different port, set VITE_BACKEND_URL in frontend/.env')
+console.log('Expected ElevenLabs port: 3001')
+console.log('To change: Set VITE_BACKEND_URL and VITE_ELEVENLABS_URL in frontend/.env')
 
 // Test backend connection on startup
 fetch(`${BACKEND_URL}/health`)
@@ -309,8 +316,8 @@ function App() {
       setIncidentReport(report)
       console.log('✓ Report generated successfully:', report)
 
-      // Generate and speak audio instructions using Web Speech API
-      if ('speechSynthesis' in window) {
+      // Generate and speak audio instructions using ElevenLabs
+      try {
         const urgencyNote = urgency === 'critical' 
           ? 'CRITICAL: Immediate medical attention required. ' 
           : urgency === 'high' 
@@ -327,11 +334,54 @@ function App() {
           audioScript += erSummary.chief_complaint + '. '
         }
         
-        const utterance = new SpeechSynthesisUtterance(audioScript)
-        utterance.rate = 0.9
-        utterance.pitch = 1
-        utterance.volume = 1
-        speechSynthesis.speak(utterance)
+        console.log('Generating audio with ElevenLabs:', audioScript.substring(0, 100) + '...')
+        
+        // Call ElevenLabs text-to-speech endpoint
+        const audioResponse = await fetch(`${ELEVENLABS_URL}/text-to-speech`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            text: audioScript
+          })
+        })
+        
+        if (audioResponse.ok) {
+          // Get audio as blob
+          const audioBlob = await audioResponse.blob()
+          const audioUrl = URL.createObjectURL(audioBlob)
+          
+          // Play audio
+          const audio = new Audio(audioUrl)
+          audio.play().catch(err => {
+            console.error('Error playing audio:', err)
+          })
+          
+          console.log('✓ Audio generated and playing')
+        } else {
+          console.warn('Failed to generate audio:', audioResponse.status)
+        }
+      } catch (audioErr) {
+        console.error('Error generating audio:', audioErr)
+        // Fallback to Web Speech API if ElevenLabs fails
+        if ('speechSynthesis' in window) {
+          const urgencyNote = urgency === 'critical' 
+            ? 'CRITICAL: Immediate medical attention required. ' 
+            : urgency === 'high' 
+            ? 'HIGH PRIORITY: Urgent medical attention needed. ' 
+            : ''
+          
+          let audioScript = urgencyNote
+          if (healthGuidance.call_emergency_services) {
+            audioScript += 'Call emergency services immediately. '
+          }
+          audioScript += actions.slice(0, 3).join('. ') + '. '
+          
+          const utterance = new SpeechSynthesisUtterance(audioScript)
+          utterance.rate = 0.9
+          speechSynthesis.speak(utterance)
+        }
       }
     } catch (err) {
       console.error('✗ Error sending to backend:', err)
