@@ -2,19 +2,6 @@
 
 Standalone Dockerized C++ application to run the Presage (SmartSpectra) SDK, access webcam, and output vital signs data via HTTP API.
 
-## Project Structure
-
-```
-presage-engine/
-├── Dockerfile              # Ubuntu 22.04 with dependencies
-├── CMakeLists.txt          # CMake build configuration
-├── main.cpp                # HTTP server with Presage SDK integration
-├── docker-compose.yml      # Docker Compose configuration
-├── libs/                   # Place presage-sdk.deb here
-│   └── presage-sdk.deb     # Presage SDK package (you need to obtain this)
-└── README.md
-```
-
 ## Prerequisites
 
 1. **Docker Desktop** installed and running
