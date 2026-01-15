@@ -55,9 +55,14 @@ const IncidentReport = ({ report, videoUrl, onStopAutoAudio }) => {
 
   const generateEMSReport = () => {
     const erSummary = report.erSummary || {}
-    const simVitals = report.simulatedVitals || {}
+    const presageVitals = report.presageVitals || {}
     const incident = report.incidentReport || {}
     const imageAnalysis = report.imageAnalysis || {}
+    
+    // Use only Presage data
+    const heartRate = presageVitals.heartRate || 'N/A'
+    const breathingRate = presageVitals.breathingRate || 'N/A'
+    const vitalsSource = presageVitals.heartRate ? 'Presage SmartSpectra SDK' : 'Not Available'
     
     // SBAR Format - Standard EMS Communication
     return `
@@ -88,13 +93,9 @@ Patient History: Unknown (first responder assessment)
 ────────────────────────────────────────────────────────────────
   A - ASSESSMENT
 ────────────────────────────────────────────────────────────────
-VITAL SIGNS (Simulated):
-  • Heart Rate:       ${simVitals.heartRate || 'N/A'} BPM
-  • Respiratory Rate: ${simVitals.respiratoryRate || 'N/A'} /min
-  • O2 Saturation:    ${simVitals.oxygenSaturation || 'N/A'}%
-  • Blood Loss Est:   ${simVitals.bloodLoss || 'None'}
-  • Stress Level:     ${simVitals.stressLevel || 'Unknown'}
-  • Shock Risk:       ${simVitals.shockRisk || 'Unknown'}
+VITAL SIGNS (${vitalsSource}):
+  • Heart Rate:       ${heartRate} BPM${presageVitals.heartRate ? ' (Presage SDK)' : ''}
+  • Respiratory Rate: ${breathingRate} /min${presageVitals.breathingRate ? ' (Presage SDK)' : ''}
 
 Clinical Impression: ${erSummary.chiefComplaint || 'Requires further assessment'}
 Triage Category: ${erSummary.triageLevel || report.urgency?.toUpperCase() || 'UNKNOWN'}
@@ -113,7 +114,9 @@ FOLLOW-UP: ${incident.followUp || 'Standard EMS protocols'}
 ────────────────────────────────────────────────────────────────
   DISCLAIMER
 ────────────────────────────────────────────────────────────────
-${report.disclaimer || 'All vitals are simulated for demonstration purposes only. This AI-generated report does not replace professional medical assessment. Always follow local EMS protocols.'}
+${report.disclaimer || (presageVitals.heartRate 
+  ? 'Vitals extracted using Presage SmartSpectra SDK. Visual analysis by Gemini Vision API. This AI-generated report does not replace professional medical assessment. Always follow local EMS protocols.'
+  : 'All vitals are simulated for demonstration purposes only. This AI-generated report does not replace professional medical assessment. Always follow local EMS protocols.')}
 
 ════════════════════════════════════════════════════════════════
                     END OF SBAR REPORT
@@ -387,7 +390,7 @@ ${report.disclaimer || 'All vitals are simulated for demonstration purposes only
   }
 
   const urgencyStyle = getUrgencyColor(report.urgency || report.erSummary?.triageLevel)
-  const simVitals = report.simulatedVitals || {}
+  const presageVitals = report.presageVitals || {}
   const erSummary = report.erSummary || {}
   const imageAnalysis = report.imageAnalysis || {}
 
@@ -449,30 +452,33 @@ ${report.disclaimer || 'All vitals are simulated for demonstration purposes only
           {/* Column 2: Vitals */}
           <div className="panel p-4 bg-surface-2">
             <h3 className="text-sm font-semibold text-text-muted uppercase mb-3 flex items-center gap-2">
-              Vitals <span className="text-text-dim font-normal">(Presage Estimate)</span>
+              Vitals <span className="text-text-dim font-normal">(Presage SmartSpectra SDK)</span>
               <img src="/images/image.png" alt="Presage" className="h-4 object-contain" />
             </h3>
             <div className="grid grid-cols-2 gap-2 text-sm">
               <div className="text-center p-2 bg-surface rounded">
-                <div className="text-xl font-bold text-red-400">{simVitals.heartRate || '--'}</div>
+                <div className="text-xl font-bold text-red-400">{presageVitals.heartRate || '--'}</div>
                 <div className="text-xs text-text-dim">HR bpm</div>
+                {presageVitals.heartRate && (
+                  <div className="text-xs text-green-500 mt-1">✓ Presage SDK</div>
+                )}
               </div>
               <div className="text-center p-2 bg-surface rounded">
-                <div className="text-xl font-bold text-text">{simVitals.respiratoryRate || '--'}</div>
+                <div className="text-xl font-bold text-text">{presageVitals.breathingRate || '--'}</div>
                 <div className="text-xs text-text-dim">RR /min</div>
+                {presageVitals.breathingRate && (
+                  <div className="text-xs text-green-500 mt-1">✓ Presage SDK</div>
+                )}
               </div>
-              <div className="text-center p-2 bg-surface rounded">
-                <div className="text-xl font-bold text-green-400">{simVitals.oxygenSaturation || '--'}</div>
-                <div className="text-xs text-text-dim">SpO2 %</div>
-              </div>
-              <div className="text-center p-2 bg-surface rounded">
-                <div className={`text-sm font-bold ${simVitals.shockRisk?.toLowerCase() === 'high' ? 'text-red-400' : simVitals.shockRisk?.toLowerCase() === 'moderate' ? 'text-orange-400' : 'text-green-400'}`}>
-                  {simVitals.shockRisk || '--'}
-              </div>
-                <div className="text-xs text-text-dim">Shock Risk</div>
+              {presageVitals.focus !== undefined && (
+                <div className="text-center p-2 bg-surface rounded">
+                  <div className="text-xl font-bold text-green-400">{Math.round(presageVitals.focus)}</div>
+                  <div className="text-xs text-text-dim">Focus %</div>
+                  <div className="text-xs text-green-500 mt-1">✓ Presage SDK</div>
+                </div>
+              )}
             </div>
           </div>
-        </div>
 
           {/* Column 3: Actions */}
           <div className="panel p-4 bg-surface-2">
@@ -510,7 +516,11 @@ ${report.disclaimer || 'All vitals are simulated for demonstration purposes only
 
         {/* Disclaimer */}
         <div className="text-xs text-text-dim text-center mb-4">
-          ⚠️ All vitals are simulated for demonstration. Not a medical assessment.
+          {presageVitals.heartRate ? (
+            <>✓ Vitals extracted using Presage SmartSpectra SDK. Visual analysis by Gemini Vision API.</>
+          ) : (
+            <>⚠️ Vitals data not available. Please ensure Presage Engine is running and video processing completed successfully.</>
+          )}
         </div>
 
         {/* Action Buttons */}

@@ -115,7 +115,10 @@ bool initialize_sdk(const std::string& api_key) {
         google::InitGoogleLogging("presage_engine");
         FLAGS_alsologtostderr = true;
         sdk_initialized = true;
-        std::cout << "Presage SDK initialized successfully" << std::endl;
+        std::cout << "========================================" << std::endl;
+        std::cout << "✓ Presage SmartSpectra SDK INITIALIZED" << std::endl;
+        std::cout << "✓ Using SDK for vital sign extraction" << std::endl;
+        std::cout << "========================================" << std::endl;
         return true;
     } catch (const std::exception& e) {
         std::cerr << "Failed to initialize SDK: " << e.what() << std::endl;
@@ -180,24 +183,27 @@ void run_camera_test(const std::string& api_key) {
         // Create container
         auto container = std::make_unique<container::CpuContinuousRestForegroundContainer>(settings);
 
-        // Metrics callback - store all readings
+        // Metrics callback - store all readings from REAL Presage SDK
         auto status = container->SetOnCoreMetricsOutput(
             [](const presage::physiology::MetricsBuffer& metrics, int64_t timestamp) {
                 std::lock_guard<std::mutex> lock(vitals_readings_mutex);
                 
                 json reading;
                 reading["timestamp_ms"] = timestamp;
+                reading["source"] = "presage_sdk";  
                 
+                // Extract heart rate from Presage SDK
                 if (!metrics.pulse().rate().empty()) {
                     float pulse = metrics.pulse().rate().rbegin()->value();
                     reading["heart_rate_bpm"] = pulse;
-                    std::cout << "Heart Rate: " << pulse << " BPM" << std::endl;
+                    std::cout << "[Presage SDK] Heart Rate: " << pulse << " BPM" << std::endl;
                 }
                 
+                // Extract breathing rate from Presage SDK
                 if (!metrics.breathing().rate().empty()) {
                     float breathing = metrics.breathing().rate().rbegin()->value();
                     reading["breathing_rate_bpm"] = breathing;
-                    std::cout << "Breathing Rate: " << breathing << " BPM" << std::endl;
+                    std::cout << "[Presage SDK] Breathing Rate: " << breathing << " breaths/min" << std::endl;
                 }
                 
                 // Store this reading
@@ -262,17 +268,32 @@ void run_camera_test(const std::string& api_key) {
 }
 
 #else
-// Stub implementations when SDK is not available
+// ERROR: SDK not available - fail explicitly
 bool initialize_sdk(const std::string& api_key) {
-    std::cout << "Presage SDK not available (compiled without SDK support)" << std::endl;
-    sdk_initialized = true;  // Allow server to start
-    return true;
+    std::cerr << "========================================" << std::endl;
+    std::cerr << "❌ ERROR: Presage SmartSpectra SDK NOT AVAILABLE" << std::endl;
+    std::cerr << "❌ Application compiled without SDK support" << std::endl;
+    std::cerr << "========================================" << std::endl;
+    std::cerr << "To use the real Presage SDK:" << std::endl;
+    std::cerr << "1. Install libsmartspectra-dev package" << std::endl;
+    std::cerr << "2. Ensure SDK libraries are in /usr/lib or /usr/local/lib" << std::endl;
+    std::cerr << "3. Rebuild the application" << std::endl;
+    std::cerr << "========================================" << std::endl;
+    sdk_initialized = false;
+    return false;  // Fail initialization
 }
 
 void run_camera_test(const std::string& api_key) {
-    std::cout << "Presage SDK not available. Cannot run camera test." << std::endl;
-    if (check_camera_device()) {
-        std::cout << "Camera device exists but SDK is not installed." << std::endl;
+    std::cerr << "❌ ERROR: Cannot process video - Presage SDK not available" << std::endl;
+    std::cerr << "Install the Presage SmartSpectra SDK to extract real vital signs" << std::endl;
+    // Clear any stale data
+    {
+        std::lock_guard<std::mutex> lock(vitals_readings_mutex);
+        all_vitals_readings.clear();
+    }
+    {
+        std::lock_guard<std::mutex> lock2(vitals_mutex);
+        latest_vitals = json::object();
     }
 }
 #endif
@@ -306,13 +327,23 @@ int main(int argc, char** argv) {
 
     // GET /status
     svr.Get("/status", [](const httplib::Request&, httplib::Response& res) {
+#ifdef PRESAGE_SDK_AVAILABLE
+        bool sdk_available = true;
+        std::string sdk_status = "Presage SmartSpectra SDK is AVAILABLE and ACTIVE";
+#else
+        bool sdk_available = false;
+        std::string sdk_status = "Presage SmartSpectra SDK is NOT AVAILABLE (compiled without SDK)";
+#endif
         json response = {
-            {"status", "SDK Ready"},
+            {"status", sdk_initialized.load() ? "SDK Ready" : "SDK Not Initialized"},
+            {"sdk_available", sdk_available},
+            {"sdk_status", sdk_status},
             {"sdk_initialized", sdk_initialized.load()},
             {"camera_running", camera_running.load()},
             {"camera_available", check_camera_device()},
             {"video_file_uploaded", !video_file_path.empty()},
-            {"video_file_path", video_file_path.empty() ? "" : video_file_path}
+            {"video_file_path", video_file_path.empty() ? "" : video_file_path},
+            {"readings_count", all_vitals_readings.size()}
         };
         res.set_content(response.dump(), "application/json");
     });
@@ -381,18 +412,33 @@ int main(int argc, char** argv) {
             video_file_path = filepath;
         }
         
-        // Process video synchronously (this will populate all_vitals_readings)
-        std::cout << "Processing video to extract vitals..." << std::endl;
+        // Process video synchronously using Presage SDK
+        std::cout << "Processing video with Presage SmartSpectra SDK to extract REAL vitals..." << std::endl;
         run_camera_test(api_key);
         
-        // Calculate and return vitals summary
+        // Calculate and return vitals summary from SDK data
         json vitals_summary = calculate_vitals_summary();
+        
+        // Check if we got any data
+        if (vitals_summary.empty() || vitals_summary["readings_count"] == 0) {
+            res.status = 500;
+            json error_response = {
+                {"success", false},
+                {"error", "No vitals data extracted from video"},
+                {"message", "Presage SDK did not return any vital sign readings. Check video quality and ensure face is visible."},
+                {"video_file", filename}
+            };
+            res.set_content(error_response.dump(), "application/json");
+            return;
+        }
         
         json response = {
             {"success", true},
             {"video_file", filename},
             {"vitals", vitals_summary},
-            {"processing_complete", true}
+            {"processing_complete", true},
+            {"data_source", "presage_sdk"},
+            {"note", "Vitals extracted using Presage SmartSpectra SDK"}
         };
         
         res.set_content(response.dump(), "application/json");
@@ -509,14 +555,22 @@ int main(int argc, char** argv) {
         res.set_content("OK", "text/plain");
     });
 
+    std::cout << "========================================" << std::endl;
     std::cout << "Presage Engine starting on port 8080..." << std::endl;
+#ifdef PRESAGE_SDK_AVAILABLE
+    std::cout << "✓ Using Presage SmartSpectra SDK" << std::endl;
+#else
+    std::cout << "❌ WARNING: Presage SDK not available" << std::endl;
+#endif
+    std::cout << "========================================" << std::endl;
     std::cout << "Endpoints:" << std::endl;
     std::cout << "  GET /status - Check SDK status" << std::endl;
-    std::cout << "  POST /process-video - Upload video, process, and return vitals JSON (multipart/form-data, field: 'video')" << std::endl;
-    std::cout << "  POST /upload - Upload MP4 video file (multipart/form-data, field: 'video')" << std::endl;
+    std::cout << "  POST /process-video - Upload video, process with SDK, return vitals JSON" << std::endl;
+    std::cout << "  POST /upload - Upload MP4 video file" << std::endl;
     std::cout << "  GET /test - Run video processing (uses uploaded video or camera)" << std::endl;
-    std::cout << "  GET /live - Get latest vitals data" << std::endl;
+    std::cout << "  GET /live - Get latest vitals data from SDK" << std::endl;
     std::cout << "  GET /health - Health check" << std::endl;
+    std::cout << "========================================" << std::endl;
 
     // Start server
     if (!svr.listen("0.0.0.0", 8080)) {

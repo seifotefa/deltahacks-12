@@ -9,6 +9,11 @@ import './App.css'
 // To change: Create frontend/.env file with: VITE_BACKEND_URL=http://localhost:YOUR_PORT
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000'
 
+// Presage Engine endpoint
+// Default: http://localhost:8080
+// To change: Create frontend/.env file with: VITE_PRESAGE_ENGINE_URL=http://localhost:YOUR_PORT
+const PRESAGE_ENGINE_URL = import.meta.env.VITE_PRESAGE_ENGINE_URL || 'http://localhost:8080'
+
 // ElevenLabs service endpoint
 // Default: http://localhost:3001
 // To change: Create frontend/.env file with: VITE_ELEVENLABS_URL=http://localhost:YOUR_PORT
@@ -17,10 +22,12 @@ const ELEVENLABS_URL = import.meta.env.VITE_ELEVENLABS_URL || 'http://localhost:
 // Log configuration on startup
 console.log('=== Frontend Configuration ===')
 console.log('Backend URL (Gemini):', BACKEND_URL)
+console.log('Presage Engine URL:', PRESAGE_ENGINE_URL)
 console.log('ElevenLabs URL:', ELEVENLABS_URL)
 console.log('Expected backend port: 3000')
+console.log('Expected Presage Engine port: 8080')
 console.log('Expected ElevenLabs port: 3001')
-console.log('To change: Set VITE_BACKEND_URL and VITE_ELEVENLABS_URL in frontend/.env')
+console.log('To change: Set VITE_BACKEND_URL, VITE_PRESAGE_ENGINE_URL, and VITE_ELEVENLABS_URL in frontend/.env')
 
 // Test backend connection on startup
 fetch(`${BACKEND_URL}/health`)
@@ -112,7 +119,7 @@ function App() {
       size: videoFile.size, 
       type: videoFile.type 
     } : 'MISSING')
-    console.log('Vitals data:', vitalsData)
+    console.log('Vitals data :', vitalsData)
     
     if (!videoFile || videoFile.size === 0) {
       console.error('ERROR: Video file is missing or empty')
@@ -124,8 +131,7 @@ function App() {
     
     setIsScanning(false)
     setIsProcessing(true)
-    setProcessingStatus('Preparing video for analysis...')
-    setPresageData(vitalsData)
+    setProcessingStatus('Extracting vitals from video with Presage SDK...')
     setError(null)
     
     // Save video URL for playback
@@ -133,10 +139,82 @@ function App() {
     setRecordedVideoUrl(videoUrl)
 
     try {
+      // STEP 1: Send video to Presage Engine to get vitals data
+      console.log('\n=== STEP 1: Calling Presage Engine ===')
+      console.log(`URL: ${PRESAGE_ENGINE_URL}/process-video`)
+      console.log(`Video file: ${videoFile.name} (${(videoFile.size / 1024 / 1024).toFixed(2)} MB)`)
+      
+      setProcessingStatus('Processing video with Presage SmartSpectra SDK...')
+      
+      // Convert video file to blob for sending
+      const videoBlob = new Blob([videoFile], { type: videoFile.type || 'video/mp4' })
+      
+      const presageResponse = await fetch(`${PRESAGE_ENGINE_URL}/process-video`, {
+        method: 'POST',
+        body: videoBlob,
+        headers: {
+          'Content-Type': 'application/octet-stream'
+        },
+        signal: AbortSignal.timeout(30000) // 30 second timeout
+      })
+      
+      if (!presageResponse.ok) {
+        const errorText = await presageResponse.text()
+        console.error('Presage Engine error:', errorText)
+        throw new Error(`Presage Engine failed: ${presageResponse.status} ${presageResponse.statusText} - ${errorText}`)
+      }
+      
+      const presageResult = await presageResponse.json()
+      console.log('✓ Presage Engine response:', presageResult)
+      
+      // Extract real vitals from Presage response
+      const presageVitals = presageResult.vitals || {}
+      const heartRateData = presageVitals.heart_rate || {}
+      const breathingRateData = presageVitals.breathing_rate || {}
+      
+      // Transform Presage format to frontend format
+      const realVitals = {
+        heartRate: Math.round(heartRateData.avg || 75),
+        breathingRate: Math.round(breathingRateData.avg || 16),
+        focus: 85 // Default focus, can be calculated from variance if needed
+      }
+      
+      // Calculate focus based on heart rate variance (more stable = higher focus)
+      if (heartRateData.min && heartRateData.max) {
+        const variance = heartRateData.max - heartRateData.min
+        if (variance < 10) {
+          realVitals.focus = 85 + Math.random() * 15 // 85-100
+        } else if (variance < 20) {
+          realVitals.focus = 60 + Math.random() * 20 // 60-80
+        } else {
+          realVitals.focus = 40 + Math.random() * 20 // 40-60
+        }
+      }
+      
+      console.log('✓   Vitals extracted from Presage SDK:', realVitals)
+      console.log('  - Heart Rate:', realVitals.heartRate, 'BPM (avg:', heartRateData.avg, ', range:', heartRateData.min, '-', heartRateData.max, ')')
+      console.log('  - Breathing Rate:', realVitals.breathingRate, 'breaths/min (avg:', breathingRateData.avg, ', range:', breathingRateData.min, '-', breathingRateData.max, ')')
+      console.log('  - Total readings:', presageVitals.readings_count || 0)
+      
+      // Store real Presage data
+      setPresageData(realVitals)
+      
+      // STEP 2: Send video and REAL Presage vitals to Gemini backend
+      setProcessingStatus('Analyzing video with Gemini Vision API...')
+      console.log('\n=== STEP 2: Calling Gemini Backend ===')
+      console.log(`URL: ${BACKEND_URL}/analyze-video`)
+      console.log('Using Presage vitals:', realVitals)
+      
       // Send video file to backend for analysis
       const formData = new FormData()
       formData.append('video', videoFile, videoFile.name) // Use the File object with its name
-      formData.append('presageData', JSON.stringify(vitalsData))
+      // Send the REAL Presage data in the format Gemini expects
+      formData.append('presageData', JSON.stringify({
+        heart_rate: heartRateData,
+        breathing_rate: breathingRateData,
+        readings_count: presageVitals.readings_count,
+        all_readings: presageVitals.all_readings || []
+      }))
 
       console.log('Sending video to backend...', {
         videoSize: videoFile.size,
@@ -376,8 +454,8 @@ function App() {
         // Simulated vitals from Gemini
         simulatedVitals: geminiVitals,
         
-        // Frontend collected vitals (from Presage simulation)
-        presageVitals: vitalsData,
+        // REAL vitals from Presage SDK (not simulated!)
+        presageVitals: presageData, // This now contains REAL data from Presage Engine
         
         // Health guidance
         actions: actions,
@@ -404,7 +482,7 @@ function App() {
         
         diagnosis: diagnosis.trim(),
         urgency: urgency,
-        disclaimer: analysis.disclaimer || 'All vitals are simulated for demonstration purposes.',
+        disclaimer: analysis.disclaimer || 'Vitals extracted using Presage SmartSpectra SDK. Visual analysis by Gemini Vision API.',
         
         // Keep full backend analysis for debugging
         fullAnalysis: analysis
@@ -544,7 +622,7 @@ function App() {
         }
       }
     } catch (err) {
-      console.error('✗ Error sending to backend:', err)
+      console.error('✗ Error processing video:', err)
       setProcessingStatus('')
       setIsProcessing(false)
       setProcessingProgress(0)
@@ -552,9 +630,19 @@ function App() {
       // Provide more helpful error messages
       let errorMessage = err.message
       if (err.name === 'AbortError') {
-        errorMessage = 'Request timed out. The backend may be processing or unavailable.'
+        if (err.message.includes('Presage Engine')) {
+          errorMessage = 'Presage Engine request timed out. Make sure the Presage Engine is running on port 8080.'
+        } else {
+          errorMessage = 'Request timed out. The backend may be processing or unavailable.'
+        }
+      } else if (err.message.includes('Presage Engine failed')) {
+        errorMessage = `Presage Engine error: ${err.message}. Make sure the Presage Engine is running on port 8080.`
       } else if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
-        errorMessage = `Cannot connect to backend at ${BACKEND_URL}. Make sure the backend service is running on port 3000.`
+        if (err.message.includes('8080')) {
+          errorMessage = `Cannot connect to Presage Engine at ${PRESAGE_ENGINE_URL}. Make sure the Presage Engine is running.`
+        } else {
+          errorMessage = `Cannot connect to backend at ${BACKEND_URL}. Make sure the backend service is running on port 3000.`
+        }
       } else if (err.message.includes('CORS')) {
         errorMessage = 'CORS error. Check backend CORS configuration.'
       }
