@@ -1,5 +1,5 @@
 # 🚨 Frontline 
-![Logo](frontend\images\Logo.png)
+![Logo](frontend/images/Logo.png)
 - Frontline turns bystanders into first responders.
 
 ## 🎯 Features
@@ -14,7 +14,7 @@
   - 🏥 DIAGNOSIS (Combined analysis)
 - **Audio Instructions**: ElevenLabs text-to-speech provides immediate first aid guidance
 - **Export Options**: Copy for EMS or export as JSON
-![dashboard](frontend\public\images\frontdashboard.jpg)
+![dashboard](frontend/public/images/frontdashboard.jpg)
 ## 🏗️ Architecture
 
 ### Full-Stack System
@@ -42,7 +42,7 @@
 - Converts text to speech using ElevenLabs API
 - Generates audio instructions for first aid
 - Runs on port 3001
-![demo](frontend\public\images\frontvideo.jpg)
+![demo](frontend/public/images/frontvideo.jpg)
 
 ## 🚀 Quick Start
 
