@@ -1,6 +1,6 @@
-# 🚨 Frontline - 10-Second Biometric & Visual Analysis
-
-A full-stack web application that performs instant "Touchless Triage" using camera-based biometric sensing and visual analysis. Built according to RULES.md specifications.
+# 🚨 Frontline 
+![Logo](frontend\images\Logo.png)
+- Frontline turns bystanders into first responders.
 
 ## 🎯 Features
 
@@ -14,7 +14,7 @@ A full-stack web application that performs instant "Touchless Triage" using came
   - 🏥 DIAGNOSIS (Combined analysis)
 - **Audio Instructions**: ElevenLabs text-to-speech provides immediate first aid guidance
 - **Export Options**: Copy for EMS or export as JSON
-
+![dashboard](frontend\public\images\frontdashboard.jpg)
 ## 🏗️ Architecture
 
 ### Full-Stack System
@@ -42,6 +42,7 @@ A full-stack web application that performs instant "Touchless Triage" using came
 - Converts text to speech using ElevenLabs API
 - Generates audio instructions for first aid
 - Runs on port 3001
+![demo](frontend\public\images\frontvideo.jpg)
 
 ## 🚀 Quick Start
 
@@ -61,14 +62,11 @@ A full-stack web application that performs instant "Touchless Triage" using came
 - **Biometric Sensing**: Simulates Presage SDK data collection (HR, RR, Focus)
 - **Visual Analysis**: Generates mock visual analysis based on vitals patterns
 - **Report Generation**: Frontend-only logic that combines all data sources
-- **Audio Instructions**: Uses browser's built-in Web Speech API
-- **No Backend Required**: Everything runs client-side
+- **Audio Instructions**: Uses ElevenLabs API
 
 ## 🔒 Privacy & Security
 
-- All processing happens client-side (no data sent to servers)
 - Camera access requires explicit user permission
-- No external API calls or data transmission
 - Reports are generated locally and can be exported
 
 ### Installation
